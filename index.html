@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Socket.io 실시간 채팅</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        /* (스타일은 방법 1과 거의 동일하게 사용하실 수 있습니다) */
+        body { font-family: sans-serif; background: #eef2f3; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        #chat { width: 400px; height: 500px; background: white; border-radius: 8px; display: flex; flex-direction: column; box-shadow: 0 4px 10px rgba(0,0,0,0.1); overflow: hidden;}
+        #messages { flex: 1; padding: 20px; overflow-y: auto; border-bottom: 1px solid #eee; }
+        #form { display: flex; padding: 10px; }
+        #input { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
+        #send { background: #007bff; color: white; border: none; padding: 10px 15px; margin-left: 5px; border-radius: 4px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div id="chat">
+    <div id="messages"></div>
+    <form id="form">
+        <input id="input" autocomplete="off" placeholder="메시지를 입력하세요..." />
+        <button id="send">전송</button>
+    </form>
+</div>
+
+<script>
+    // ⚠️ 무료 서버 배포 서비스(Render 등)에 백엔드를 올린 후 그 주소를 적어줍니다.
+    // 로컬 테스트 시에는 'http://localhost:3000' 사용
+    const BACKEND_URL = "https://your-socket-server.onrender.com"; 
+    const socket = io(BACKEND_URL);
+
+    const form = document.getElementById('form');
+    const input = document.getElementById('input');
+    const messages = document.getElementById('messages');
+
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (input.value) {
+            socket.emit('chat message', input.value);
+            input.value = '';
+        }
+    });
+
+    socket.on('chat message', (msg) => {
+        const item = document.createElement('div');
+        item.textContent = msg;
+        item.style.padding = "5px 0";
+        messages.appendChild(item);
+        messages.scrollTop = messages.scrollHeight;
+    });
+</script>
+</body>
+</html>
