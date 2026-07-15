@@ -129,14 +129,21 @@
     });
 
     // 3. 메시지 전송
+    // 3. 메시지 전송 (기존 조건문 완화 및 에러 출력 추가)
     form.addEventListener('submit', (e) => {
         e.preventDefault();
         const msgText = input.value.trim();
-        if (msgText && socket.connected) {
-            // 서버에 텍스트만 보냄 (이름은 서버가 소켓 정보를 통해 알고 있음)
-            socket.emit('chat message', msgText);
-            input.value = '';
+        
+        if (!msgText) return;
+
+        if (!socket.connected) {
+            alert("아직 서버와 연결되지 않았습니다. 잠시만 기다린 후 다시 시도해 주세요!");
+            console.log("현재 소켓 연결 상태:", socket);
+            return;
         }
+
+        socket.emit('chat message', msgText);
+        input.value = '';
     });
 
     function scrollToBottom() {
