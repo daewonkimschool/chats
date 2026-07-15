@@ -3,33 +3,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>이름 입력 실시간 채팅</title>
+    <title>스마트 오픈 채팅방</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; }
         
-        /* 이름 입력 화면 스타일 */
+        /* 이름 입력 화면 */
         #login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; }
         #login-box { background: white; padding: 30px; border-radius: 12px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.2); width: 300px; }
         #login-box h2 { margin-bottom: 15px; font-size: 1.2rem; }
         #nickname-input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 10px; font-size: 1rem; text-align: center;}
         #start-btn { width: 100%; background: #007fff; color: white; border: none; padding: 10px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 1rem; }
 
-        /* 채팅 화면 스타일 */
-        #chat-wrapper { width: 100%; max-width: 400px; height: 90vh; background: #fff; box-shadow: 0 8px 24px rgba(0,0,0,0.1); border-radius: 16px; display: flex; flex-direction: column; overflow: hidden; display: none; /* 처음에 숨김 */ }
-        #header { background: #007fff; color: white; padding: 18px; font-weight: bold; text-align: center; font-size: 1.1rem; }
+        /* 채팅 화면 */
+        #chat-wrapper { width: 100%; max-width: 400px; height: 90vh; background: #fff; box-shadow: 0 8px 24px rgba(0,0,0,0.1); border-radius: 16px; display: flex; flex-direction: column; overflow: hidden; display: none; }
+        #header { background: #007fff; color: white; padding: 15px 18px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; font-size: 1.1rem; }
+        #logout-btn { background: rgba(255,255,255,0.2); border: none; color: white; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
+        #logout-btn:hover { background: rgba(255,255,255,0.3); }
+        
         #messages { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
         
-        /* 메시지 박스 스타일 */
-        .msg-box { max-width: 70%; padding: 10px 14px; border-radius: 14px; font-size: 0.95rem; line-height: 1.4; word-break: break-all; position: relative; }
-        .msg-box.other { background: #e9ecef; align-self: flex-start; border-top-left-radius: 2px; }
+        /* 메시지 스타일 */
+        .msg-box { max-width: 70%; padding: 10px 14px; border-radius: 14px; font-size: 0.95rem; line-height: 1.4; word-break: break-all; position: relative; display: flex; flex-direction: column; }
+        .msg-box.other { background: #e9ecef; align-self: flex-start; border-top-left-radius: 2px; margin-top: 15px; }
         .msg-box.me { background: #007fff; color: white; align-self: flex-end; border-top-right-radius: 2px; }
         .msg-box.system { background: #fff3cd; color: #856404; align-self: center; text-align: center; font-size: 0.8rem; border-radius: 30px; max-width: 90%; padding: 5px 15px; }
         
-        /* 이름 출력 스타일 */
         .sender-name { font-size: 0.75rem; color: #6c757d; position: absolute; top: -18px; left: 5px; white-space: nowrap; }
-        .msg-box.other { margin-top: 15px; /* 이름 들어갈 공간 확보 */ }
+        .msg-time { font-size: 0.7rem; color: #adb5bd; align-self: flex-end; margin-top: 4px; }
+        .msg-box.me .msg-time { color: rgba(255, 255, 255, 0.7); }
 
         #form { display: flex; padding: 12px; background: #fff; border-top: 1px solid #eaeaea; }
         #input { flex: 1; padding: 12px 16px; border: 1px solid #ddd; border-radius: 24px; outline: none; font-size: 0.95rem; }
@@ -47,7 +50,10 @@
 </div>
 
 <div id="chat-wrapper">
-    <div id="header">실시간 오픈 대화방</div>
+    <div id="header">
+        <span>실시간 오픈 대화방</span>
+        <button id="logout-btn" onclick="logout()">로그아웃</button>
+    </div>
     <div id="messages"></div>
     <form id="form">
         <input id="input" autocomplete="off" placeholder="메시지를 입력하세요..." required />
@@ -56,80 +62,107 @@
 </div>
 
 <script>
-    // ⚠️ 중요: 이곳에 본인의 Render 서버 주소를 꼭 넣으세요!
+    // ⚠️ 본인의 Render 서버 주소로 변경해 주세요!
     const SERVER_URL = "https://chats-4ci4.onrender.com"; 
     
-    // 아직 연결하지 않고 소켓 객체만 생성
     const socket = io(SERVER_URL, { autoConnect: false });
 
-    let myName = ""; // 내 이름을 저장할 변수
+    let myName = "";
 
-    // HTML 요소 가져오기
     const loginOverlay = document.getElementById('login-overlay');
     const nicknameInput = document.getElementById('nickname-input');
     const startBtn = document.getElementById('start-btn');
     const chatWrapper = document.getElementById('chat-wrapper');
-    
     const form = document.getElementById('form');
     const input = document.getElementById('input');
     const messages = document.getElementById('messages');
 
-    // [이름 입력 화면 처리]
+    // 페이지 로드 시 기존에 저장된 이름이 있는지 확인 (자동 로그인)
+    window.onload = function() {
+        const savedName = localStorage.getItem('chat_nickname');
+        if (savedName) {
+            myName = savedName;
+            connectAndJoin();
+        }
+    }
+
     function joinChat() {
-        myName = nicknameInput.value.trim();
-        if(!myName) {
+        const enteredName = nicknameInput.value.trim();
+        if(!enteredName) {
             alert("이름을 입력해주세요!");
             return;
         }
+        myName = enteredName;
+        localStorage.setItem('chat_nickname', myName); // 브라우저에 이름 저장 💾
+        connectAndJoin();
+    }
 
-        // 1. 소켓 서버 연결 시작
+    function connectAndJoin() {
         socket.connect();
-
-        // 2. 서버에 내가 입력한 이름 보내기 ('join' 이벤트)
         socket.emit('join', myName);
 
-        // 3. 화면 전환 (이름 입력창 숨기고 채팅창 보이기)
         loginOverlay.style.display = 'none';
         chatWrapper.style.display = 'flex';
-        input.focus(); // 입력창에 포커스
+        input.focus();
+    }
+
+    // 로그아웃 버튼을 누르면 저장된 닉네임 삭제 후 초기화
+    function logout() {
+        localStorage.removeItem('chat_nickname');
+        location.reload();
     }
 
     startBtn.addEventListener('click', joinChat);
     nicknameInput.addEventListener('keypress', (e) => { if(e.key === 'Enter') joinChat(); });
 
 
-    // [실시간 소켓 이벤트 처리]
+    /* [실시간 소켓 이벤트] */
 
-    // 1. 시스템(봇) 안내 메시지 수신 (입/퇴장 알림)
+    // 1. 시스템 안내 수신
     socket.on('bot message', (msg) => {
         const item = document.createElement('div');
         item.classList.add('msg-box', 'system');
-        item.textContent = msg; // 봇 메시지는 문자열 그대로 사용
+        item.textContent = msg;
         messages.appendChild(item);
         scrollToBottom();
     });
 
-    // 2. 일반 채팅 메시지 수신 (중요: [object Object] 버그 해결)
+    // 2. 기존 대화 기록(최근 50개) 한 번에 불러오기
+    socket.on('chat history', (history) => {
+        history.forEach((data) => {
+            appendMessage(data);
+        });
+    });
+
+    // 3. 새 실시간 메시지 수신
     socket.on('chat message', (data) => {
+        appendMessage(data);
+    });
+
+    // 메시지 렌더링 공통 함수
+    function appendMessage(data) {
         const item = document.createElement('div');
-        const isMe = data.name === myName; // 서버에서 보낸 이름이 내 이름과 같은지 확인
+        const isMe = data.name === myName;
         
         item.classList.add('msg-box', isMe ? 'me' : 'other');
         
         if(!isMe) {
-            // 다른 사람이 보낸 메시지: 이름과 텍스트를 모두 표시
-            item.innerHTML = `<span class="sender-name">${data.name}</span>${data.text}`;
+            item.innerHTML = `
+                <span class="sender-name">${data.name}</span>
+                <div>${data.text}</div>
+                <span class="msg-time">${data.time || ''}</span>
+            `;
         } else {
-            // 내가 보낸 메시지: 텍스트만 표시
-            item.textContent = data.text;
+            item.innerHTML = `
+                <div>${data.text}</div>
+                <span class="msg-time">${data.time || ''}</span>
+            `;
         }
         
         messages.appendChild(item);
         scrollToBottom();
-    });
+    }
 
-    // 3. 메시지 전송
-    // 3. 메시지 전송 (기존 조건문 완화 및 에러 출력 추가)
     form.addEventListener('submit', (e) => {
         e.preventDefault();
         const msgText = input.value.trim();
@@ -137,8 +170,7 @@
         if (!msgText) return;
 
         if (!socket.connected) {
-            alert("아직 서버와 연결되지 않았습니다. 잠시만 기다린 후 다시 시도해 주세요!");
-            console.log("현재 소켓 연결 상태:", socket);
+            alert("서버와 연결이 지연되고 있습니다. 잠시만 기다려 주세요!");
             return;
         }
 
