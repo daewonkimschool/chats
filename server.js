@@ -4,7 +4,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 
 const app = express();
-app.use(cors()); // CORS 허용
+app.use(cors());
 
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -14,38 +14,48 @@ const io = new Server(server, {
   }
 });
 
+// 🔥 최근 대화 기록을 저장할 배열 (메모리 임시 저장)
+const messageHistory = [];
+const MAX_HISTORY = 50; // 최대 50개까지 보관
+
 io.on('connection', (socket) => {
-  // 클라이언트가 처음 접속하면 아무것도 안 함 (이름 입력 전까지 기다림)
   console.log('소켓 연결됨');
 
-  // 클라이언트가 이름을 입력하고 'join' 이벤트를 보냈을 때 처리
   socket.on('join', (userName) => {
-    // 소켓 자체에 이름 저장 (나중에 disconnect 시 사용)
     socket.userName = userName; 
     
-    // 접속한 유저에게 환영 메시지 전달
-    socket.emit('bot message', `${userName}님, 채팅방에 오신 것을 환영합니다!`);
-    // 다른 사람들에게 알림
+    // 1. 기존 대화 기록이 있다면 새로 들어온 사람에게만 먼저 쫙 보내주기
+    if (messageHistory.length > 0) {
+      socket.emit('chat history', messageHistory);
+    }
+
+    // 2. 환영 메시지 보내기
+    socket.emit('bot message', `${userName}님, 채팅방에 복귀하셨습니다!`);
     socket.broadcast.emit('bot message', `${userName}님이 입장하셨습니다.`);
-    console.log(`${userName} 입장`);
   });
 
-  // 메시지를 받았을 때 처리
   socket.on('chat message', (msg) => {
-    // ⚠️ 중요: [object Object] 방지를 위해 이름과 텍스트를 담은 객체로 전송
-    if(socket.userName) { // 이름을 입력한 유저만 메시지 전송 가능
-      io.emit('chat message', { 
+    if(socket.userName) {
+      const messageData = { 
         name: socket.userName, 
-        text: msg 
-      });
+        text: msg,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) // 전송 시간 추가
+      };
+
+      // 히스토리에 저장 및 50개 제한 유지
+      messageHistory.push(messageData);
+      if (messageHistory.length > MAX_HISTORY) {
+        messageHistory.shift(); // 오래된 메시지 삭제
+      }
+
+      // 모두에게 메시지 전송
+      io.emit('chat message', messageData);
     }
   });
 
-  // 접속 종료 시
   socket.on('disconnect', () => {
     if(socket.userName) {
       io.emit('bot message', `${socket.userName}님이 퇴장하셨습니다.`);
-      console.log(`${socket.userName} 퇴장`);
     }
   });
 });
