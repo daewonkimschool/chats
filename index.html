@@ -242,22 +242,82 @@
     }
 
     // ⚠️ 이미지 URL 판별 헬퍼 함수
-    function isImageUrl(url) {
-        return (url.match(/\.(jpeg|jpg|gif|png|webp|svg)$/i) != null) || url.startsWith('data:image/');
+    // ⚠️ [기존 함수 수정] 이미지 URL 또는 이미지 태그 여부를 판별하고 주소를 추출하는 함수
+    function getImageUrl(text) {
+        // 상황 1: HTML <img src="..."> 태그 형태로 들어온 경우 정규식으로 src 주소만 추출
+        const imgTagRegex = /<img[^>]*src=["']([^"']+)["']/i;
+        const match = text.match(imgTagRegex);
+        if (match && match[1]) {
+            return match[1]; // 추출한 이미지 주소 반환
+        }
+
+        // 상황 2: 순수 이미지 파일 확장자 주소인 경우 (.jpg, .png 등)
+        if ((text.match(/\.(jpeg|jpg|gif|png|webp|svg)(\?.*)?$/i) != null) || text.startsWith('data:image/')) {
+            return text;
+        }
+
+        // 상황 3: 조선일보 이미지 링크처럼 주소 중간에 해시값이나 쿼리가 복잡하게 붙은 이미지 URL 대응
+        if (text.includes('resizer') || text.includes('image') || text.includes('img')) {
+            if (text.startsWith('http://') || text.startsWith('https://')) {
+                return text; 
+            }
+        }
+
+        return null; // 이미지가 아님
     }
 
-    // 메시지 출력 처리 함수
+    // [기존 함수 수정] 메시지 출력 처리 함수
     function appendMessage(data) {
         const item = document.createElement('div');
         const isMe = data.name === myName;
         
         item.classList.add('msg-box', isMe ? 'me' : 'other');
         
-        // 1. 메시지 내부 구조 뼈대 만들기
         let innerContent = "";
         if(!isMe) {
             innerContent += `<span class="sender-name">${data.name}</span>`;
         }
+
+        // 🔥 개선된 이미지 추출 함수 사용
+        const extractedImageUrl = getImageUrl(data.text);
+
+        if (extractedImageUrl) {
+            // 이미지 주소가 추출되었다면 텍스트 대신 깔끔하게 사진으로 렌더링!
+            innerContent += `<img src="${extractedImageUrl}" class="msg-image" alt="전송된 이미지" onclick="window.open(this.src)">`;
+        } else {
+            // 일반 텍스트는 안전하게 XSS 방지 처리 후 출력
+            const textSpan = document.createElement('span');
+            textSpan.textContent = data.text;
+            innerContent += `<div>${textSpan.innerHTML}</div>`;
+        }
+
+        innerContent += `<span class="msg-time">${data.time || ''}</span>`;
+        item.innerHTML = innerContent;
+        
+        messages.appendChild(item);
+        
+        // 이미지 로드 완료 시 스크롤 처리
+        const img = item.querySelector('img');
+        if (img) {
+            img.onload = scrollToBottom;
+            // 로딩 실패 시 엑박 방지용 처리 (선택사항)
+            img.onerror = function() { this.alt = "이미지를 불러올 수 없습니다."; };
+        } else {
+            scrollToBottom();
+        }
+    }
+
+    // ⚠️ 소켓 메시지 수신부의 알림 텍스트 판별도 함께 수정해 줍니다.
+    socket.on('chat message', (data) => {
+        appendMessage(data);
+        
+        const isMe = data.name === myName;
+        if (!isMe && document.hidden) {
+            // 이미지가 감지되면 알림창에는 '[사진]'이라고 깔끔하게 표시
+            const alertText = getImageUrl(data.text) ? "[사진을 보냈습니다]" : data.text;
+            sendPushNotification(data.name, alertText);
+        }
+    });
 
         // 2. 입력된 텍스트가 이미지 주소인지 일반 텍스트인지 판별하여 주입
         if (isImageUrl(data.text)) {
