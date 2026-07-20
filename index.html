@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Glassmorphism 실시간 채팅방</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        /* 🌌 글래스모피즘 배경 설정 (은은하게 빛나는 비눗방울/오로라 느낌) */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 40%, #311042 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* 배경 장식용 빛나는 보라색/파란색 구체 */
+        body::before, body::after {
+            content: '';
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(90px);
+            z-index: 0;
+        }
+        body::before {
+            width: 320px;
+            height: 320px;
+            background: rgba(124, 58, 237, 0.5);
+            top: 10%;
+            left: 15%;
+        }
+        body::after {
+            width: 380px;
+            height: 380px;
+            background: rgba(14, 165, 233, 0.4);
+            bottom: 10%;
+            right: 15%;
+        }
+
+        /* 🔒 닉네임 입력 팝업 (Glassmorphism Overlay) */
+        #login-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(8px);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        #login-box {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 35px 30px;
+            border-radius: 20px;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+            width: 320px;
+            color: #fff;
+        }
+        #login-box h2 {
+            margin-bottom: 20px;
+            font-size: 1.3rem;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+        }
+        #nickname-input {
+            width: 100%;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            border-radius: 12px;
+            margin-bottom: 15px;
+            font-size: 1rem;
+            text-align: center;
+            color: #fff;
+            outline: none;
+            transition: 0.3s;
+        }
+        #nickname-input::placeholder { color: rgba(255, 255, 255, 0.6); }
+        #nickname-input:focus {
+            background: rgba(255, 255, 255, 0.25);
+            border-color: rgba(255, 255, 255, 0.5);
+        }
+        #start-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #6366f1, #a855f7);
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1rem;
+            box-shadow: 0 4px 15px rgba(168, 85, 247, 0.3);
+            transition: 0.2s;
+        }
+        #start-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+
+        /* 🧊 메인 채팅 컨테이너 (Glassmorphism Container) */
+        #main-container {
+            display: none;
+            width: 90%;
+            max-width: 850px;
+            height: 85vh;
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
+            border-radius: 24px;
+            overflow: hidden;
+            z-index: 10;
+        }
+
+        /* 👥 왼쪽 접속자 목록 사이드바 */
+        #sidebar {
+            width: 230px;
+            background: rgba(0, 0, 0, 0.2);
+            color: #f4f7f6;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            flex-shrink: 0;
+        }
+        #sidebar-header {
+            padding: 20px;
+            font-weight: bold;
+            font-size: 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(0, 0, 0, 0.1);
+        }
+        #user-count {
+            font-size: 0.8rem;
+            color: #a7f3d0;
+            margin-top: 5px;
+            display: block;
+            font-weight: normal;
+        }
+        #user-list {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto;
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .user-item {
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: rgba(255, 255, 255, 0.85);
+            padding: 6px 10px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.05);
+        }
+        .user-item::before {
+            content: "";
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background-color: #34d399;
+            border-radius: 50%;
+            box-shadow: 0 0 8px #34d399;
+            flex-shrink: 0;
+        }
+        .user-item.me-item {
+            font-weight: bold;
+            color: #fff;
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+        .user-item.me-item::before {
+            background-color: #fbbf24;
+            box-shadow: 0 0 8px #fbbf24;
+        }
+
+        /* 💬 오른쪽 채팅 화면 */
+        #chat-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            min-width: 0;
+        }
+        #header {
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+            padding: 18px 20px;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 1.1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        #logout-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: 0.2s;
+        }
+        #logout-btn:hover { background: rgba(239, 68, 68, 0.4); border-color: rgba(239, 68, 68, 0.5); }
+        
+        #messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        /* 🔥 글래스모피즘 메시지 말풍선 */
+        .msg-box { 
+            max-width: 70%; 
+            padding: 12px 16px; 
+            border-radius: 16px; 
+            font-size: 0.95rem; 
+            line-height: 1.45; 
+            position: relative; 
+            display: flex; 
+            flex-direction: column;
+            word-break: break-all;
+            overflow-wrap: break-word;
+            white-space: pre-wrap;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+        /* 남의 메시지 (투명한 하얀색) */
+        .msg-box.other { 
+            background: rgba(255, 255, 255, 0.15); 
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #ffffff;
+            align-self: flex-start; 
+            border-top-left-radius: 2px; 
+            margin-top: 15px; 
+        }
+        /* 내 메시지 (은은한 보라/파랑 그래디언트) */
+        .msg-box.me { 
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.8), rgba(168, 85, 247, 0.8)); 
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white; 
+            align-self: flex-end; 
+            border-top-right-radius: 2px; 
+        }
+        /* 시스템 메시지 */
+        .msg-box.system { 
+            background: rgba(255, 255, 255, 0.08); 
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #fde047; 
+            align-self: center; 
+            text-align: center; 
+            font-size: 0.8rem; 
+            border-radius: 30px; 
+            max-width: 90%; 
+            padding: 6px 18px; 
+            word-break: keep-all; 
+        }
+        
+        .sender-name { font-size: 0.75rem; color: rgba(255, 255, 255, 0.6); position: absolute; top: -20px; left: 5px; white-space: nowrap; }
+        .msg-time { font-size: 0.7rem; color: rgba(255, 255, 255, 0.5); align-self: flex-end; margin-top: 6px; }
+
+        /* 메시지 내 이미지 스타일 */
+        .msg-image {
+            max-width: 100%;
+            max-height: 250px;
+            border-radius: 10px;
+            margin-top: 6px;
+            object-fit: contain;
+            cursor: pointer;
+            display: block;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        /* ⌨️ 입력 폼 (Glassmorphism Input) */
+        #form { 
+            display: flex; 
+            padding: 15px 20px; 
+            background: rgba(0, 0, 0, 0.15); 
+            border-top: 1px solid rgba(255, 255, 255, 0.1); 
+        }
+        #input { 
+            flex: 1; 
+            padding: 12px 18px; 
+            background: rgba(255, 255, 255, 0.1); 
+            border: 1px solid rgba(255, 255, 255, 0.2); 
+            border-radius: 24px; 
+            outline: none; 
+            font-size: 0.95rem; 
+            color: #fff;
+            transition: 0.2s;
+        }
+        #input::placeholder { color: rgba(255, 255, 255, 0.5); }
+        #input:focus {
+            background: rgba(255, 255, 255, 0.18);
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+        #send { 
+            background: linear-gradient(135deg, #6366f1, #a855f7); 
+            color: white; 
+            border: none; 
+            padding: 0 22px; 
+            margin-left: 10px; 
+            border-radius: 24px; 
+            cursor: pointer; 
+            font-weight: bold; 
+            transition: 0.2s;
+            box-shadow: 0 4px 12px rgba(168, 85, 247, 0.3);
+        }
+        #send:hover { opacity: 0.9; }
+
+        /* 반응형 디자인 */
+        @media (max-width: 650px) {
+            #main-container { flex-direction: column; height: 95vh; width: 95%; }
+            #sidebar { width: 100%; height: 110px; border-right: none; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+            #user-list { flex-direction: row; flex-wrap: wrap; gap: 8px; overflow-x: auto; overflow-y: hidden; height: 45px; padding: 5px 15px; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- 🔒 로그인 팝업 -->
+<div id="login-overlay">
+    <div id="login-box">
+        <h2>사용할 닉네임 입력</h2>
+        <input type="text" id="nickname-input" placeholder="닉네임 (최대 8자)" maxlength="8" autocomplete="off">
+        <button id="start-btn">채팅 시작하기</button>
+    </div>
+</div>
+
+<!-- 🧊 메인 채팅 박스 -->
+<div id="main-container">
+    <!-- 👥 왼쪽 사이드바 -->
+    <div id="sidebar">
+        <div id="sidebar-header">
+            <span>참여자 목록</span>
+            <span id="user-count">현재 0명 접속 중</span>
+        </div>
+        <ul id="user-list"></ul>
+    </div>
+
+    <!-- 💬 오른쪽 채팅 영역 -->
+    <div id="chat-wrapper">
+        <div id="header">
+            <span>실시간 오픈 대화방</span>
+            <button id="logout-btn" onclick="logout()">로그아웃</button>
+        </div>
+        <div id="messages"></div>
+        <form id="form">
+            <input id="input" autocomplete="off" placeholder="메시지 또는 이미지 주소를 입력하세요..." required />
+            <button id="send">전송</button>
+        </form>
+    </div>
+</div>
+
+<script>
+    // ⚠️ 본인의 Render 서버 주소
+    const SERVER_URL = "https://chats-4ci4.onrender.com"; 
+    
+    const socket = io(SERVER_URL, { autoConnect: false });
+
+    let myName = "";
+
+    const loginOverlay = document.getElementById('login-overlay');
+    const nicknameInput = document.getElementById('nickname-input');
+    const startBtn = document.getElementById('start-btn');
+    const mainContainer = document.getElementById('main-container');
+    const userListElement = document.getElementById('user-list');
+    const userCountElement = document.getElementById('user-count');
+    
+    const form = document.getElementById('form');
+    const input = document.getElementById('input');
+    const messages = document.getElementById('messages');
+
+    window.onload = function() {
+        const savedName = localStorage.getItem('chat_nickname');
+        if (savedName) {
+            myName = savedName;
+            connectAndJoin();
+        }
+        requestNotificationPermission();
+    }
+
+    function requestNotificationPermission() {
+        if ("Notification" in window) {
+            if (Notification.permission !== "granted" && Notification.permission !== "denied") {
+                Notification.requestPermission();
+            }
+        }
+    }
+
+    function joinChat() {
+        const enteredName = nicknameInput.value.trim();
+        if(!enteredName) {
+            alert("이름을 입력해주세요!");
+            return;
+        }
+        myName = enteredName;
+        localStorage.setItem('chat_nickname', myName);
+        connectAndJoin();
+    }
+
+    function connectAndJoin() {
+        socket.connect();
+        socket.emit('join', myName);
+
+        loginOverlay.style.display = 'none';
+        mainContainer.style.display = 'flex';
+        input.focus();
+    }
+
+    function logout() {
+        localStorage.removeItem('chat_nickname');
+        location.reload();
+    }
+
+    startBtn.addEventListener('click', joinChat);
+    nicknameInput.addEventListener('keypress', (e) => { if(e.key === 'Enter') joinChat(); });
+
+    /* [실시간 소켓 이벤트] */
+
+    socket.on('bot message', (msg) => {
+        const item = document.createElement('div');
+        item.classList.add('msg-box', 'system');
+        item.textContent = msg;
+        messages.appendChild(item);
+        scrollToBottom();
+    });
+
+    socket.on('chat history', (history) => {
+        history.forEach((data) => {
+            appendMessage(data);
+        });
+    });
+
+    socket.on('chat message', (data) => {
+        appendMessage(data);
+        
+        const isMe = data.name === myName;
+        if (!isMe && document.hidden) {
+            const alertText = isImageUrl(data.text) ? "[사진을 보냈습니다]" : data.text;
+            sendPushNotification(data.name, alertText);
+        }
+    });
+
+    socket.on('user list', (users) => {
+        userListElement.innerHTML = "";
+        userCountElement.textContent = `현재 ${users.length}명 접속 중`;
+
+        users.forEach((user) => {
+            const li = document.createElement('li');
+            li.classList.add('user-item');
+            
+            if(user === myName) {
+                li.classList.add('me-item');
+                li.textContent = `${user} (나)`;
+            } else {
+                li.textContent = user;
+            }
+            
+            userListElement.appendChild(li);
+        });
+    });
+
+    function sendPushNotification(sender, text) {
+        if ("Notification" in window && Notification.permission === "granted") {
+            const notification = new Notification(`💬 ${sender}님의 새 메시지`, {
+                body: text,
+                icon: "https://cdn-icons-png.flaticon.com/512/1041/1041916.png"
+            });
+
+            notification.onclick = function() {
+                window.focus();
+                notification.close();
+            };
+        }
+    }
+
+    function isImageUrl(url) {
+        return (url.match(/\.(jpeg|jpg|gif|png|webp|svg)$/i) != null) || url.startsWith('data:image/');
+    }
+
+    function appendMessage(data) {
+        const item = document.createElement('div');
+        const isMe = data.name === myName;
+        
+        item.classList.add('msg-box', isMe ? 'me' : 'other');
+        
+        let innerContent = "";
+        if(!isMe) {
+            innerContent += `<span class="sender-name">${data.name}</span>`;
+        }
+
+        if (isImageUrl(data.text)) {
+            innerContent += `<img src="${data.text}" class="msg-image" alt="전송된 이미지" onclick="window.open(this.src)">`;
+        } else {
+            const textSpan = document.createElement('span');
+            textSpan.textContent = data.text;
+            innerContent += `<div>${textSpan.innerHTML}</div>`;
+        }
+
+        innerContent += `<span class="msg-time">${data.time || ''}</span>`;
+        item.innerHTML = innerContent;
+        
+        messages.appendChild(item);
+        
+        const img = item.querySelector('img');
+        if (img) {
+            img.onload = scrollToBottom;
+        } else {
+            scrollToBottom();
+        }
+    }
+
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const msgText = input.value.trim();
+        
+        if (!msgText) return;
+
+        if (!socket.connected) {
+            alert("서버와 연결이 지연되고 있습니다. 잠시만 기다려 주세요!");
+            return;
+        }
+
+        socket.emit('chat message', msgText);
+        input.value = '';
+    });
+
+    function scrollToBottom() {
+        messages.scrollTop = messages.scrollHeight;
+    }
+</script>
+</body>
+</html>
