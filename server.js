@@ -218,7 +218,7 @@ const io = new Server(server, {
 });
 
 // 🔑 Gemini API 인스턴스 생성 (본인의 API 키를 적어주세요)
-const ai = new GoogleGenAI({ apiKey: "YOUR_GEMINI_API_KEY" });
+const ai = new GoogleGenAI({ apiKey: "AQ.Ab8RN6Ik3fMnLtq4DDsOIQ5BWGMUN7LmAECQdzftDPy6YkA0aA" });
 
 const messageHistory = [];
 const MAX_HISTORY = 50;
