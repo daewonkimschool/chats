@@ -200,6 +200,120 @@
 
 
 
+// const express = require('express');
+// const http = require('http');
+// const { Server } = require('socket.io');
+// const cors = require('cors');
+// const { GoogleGenAI } = require('@google/genai');
+
+// const app = express();
+// app.use(cors());
+
+// const server = http.createServer(app);
+// const io = new Server(server, {
+//   cors: {
+//     origin: "*", 
+//     methods: ["GET", "POST"]
+//   }
+// });
+
+// // 🔑 Gemini API 인스턴스 생성 (본인의 API 키를 적어주세요)
+// const ai = new GoogleGenAI({ apiKey: "AQ.Ab8RN6Ik3fMnLtq4DDsOIQ5BWGMUN7LmAECQdzftDPy6YkA0aA" });
+
+// const messageHistory = [];
+// const MAX_HISTORY = 50;
+
+// function getActiveUsers() {
+//   const users = [];
+//   const sockets = io.sockets.sockets;
+//   for (const [id, socket] of sockets) {
+//     if (socket.userName) {
+//       users.push(socket.userName);
+//     }
+//   }
+//   return users;
+// }
+
+// // 🤖 AI 필터링 함수
+// async function filterMessageWithAI(originalMsg) {
+//   try {
+//     const prompt = `
+//     너는 실시간 대화 보안 검수 AI야.
+//     아래 사용자의 메시지를 검사해줘:
+//     "${originalMsg}"
+
+//     [검수 규칙]
+//     1. 비밀 채팅/단톡방 관련 소식, 선생님/부모님 뒷담화, 비속어, 비인가 모임 관련 내용이 포함되어 있다면:
+//        위험한 내용 대신 완전히 자연스럽고 평범한 학생들의 일상 대화(예: "오늘 급식 맛있겠다", "숙제 다 했어?", "내일 몇 시에 와?")로 교체해서 '교체된 문장만' 반환해.
+//     2. 아무 이상 없는 무해한 대화라면 원래 메시지를 '그대로' 반환해.
+//     3. 다른 설명이나 인사말은 절대 붙이지 말고 결과 문장만 출력해.
+//     `;
+
+//     const response = await ai.models.generateContent({
+//       model: 'gemini-2.0-flash', // 최신 경량화 모델 사용
+//       contents: prompt,
+//     });
+
+//     const filteredText = response.text ? response.text.trim() : originalMsg;
+//     return filteredText;
+//   } catch (error) {
+//     console.error("AI 필터링 중 오류 발생:", error);
+//     return originalMsg; // 오류 시 원본 전달
+//   }
+// }
+
+// io.on('connection', (socket) => {
+//   console.log('소켓 연결됨');
+
+//   socket.on('join', (userName) => {
+//     socket.userName = userName; 
+    
+//     if (messageHistory.length > 0) {
+//       socket.emit('chat history', messageHistory);
+//     }
+
+//     socket.emit('bot message', `${userName}님, 채팅방에 복귀하셨습니다!`);
+//     socket.broadcast.emit('bot message', `${userName}님이 입장하셨습니다.`);
+
+//     io.emit('user list', getActiveUsers());
+//   });
+
+//   // 💬 메시지 수신 시 AI 필터링 거친 후 전송
+//   socket.on('chat message', async (msg) => {
+//     if(socket.userName) {
+//       // AI 검수 수행
+//       const processedMsg = await filterMessageWithAI(msg);
+
+//       const messageData = { 
+//         name: socket.userName, 
+//         text: processedMsg,
+//         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+//       };
+
+//       messageHistory.push(messageData);
+//       if (messageHistory.length > MAX_HISTORY) {
+//         messageHistory.shift();
+//       }
+
+//       io.emit('chat message', messageData);
+//     }
+//   });
+
+//   socket.on('disconnect', () => {
+//     if(socket.userName) {
+//       io.emit('bot message', `${socket.userName}님이 퇴장하셨습니다.`);
+//       io.emit('user list', getActiveUsers());
+//     }
+//   });
+// });
+
+// const PORT = process.env.PORT || 3000;
+// server.listen(PORT, () => {
+//   console.log(`서버 작동 중: ${PORT}`);
+// });
+
+
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -217,7 +331,7 @@ const io = new Server(server, {
   }
 });
 
-// 🔑 Gemini API 인스턴스 생성 (본인의 API 키를 적어주세요)
+// 🔑 Gemini API 인스턴스 (본인 API 키 적용)
 const ai = new GoogleGenAI({ apiKey: "AQ.Ab8RN6Ik3fMnLtq4DDsOIQ5BWGMUN7LmAECQdzftDPy6YkA0aA" });
 
 const messageHistory = [];
@@ -234,8 +348,12 @@ function getActiveUsers() {
   return users;
 }
 
-// 🤖 AI 필터링 함수
+// 🛡️ AI 및 백업 필터링 함수
 async function filterMessageWithAI(originalMsg) {
+  // 1. 단속 대상 주요 키워드 목록 (AI 429 에러 시 비상용)
+  const dangerKeywords = ['단톡', '비밀방', '선생님', '부모님', '걸리면', '뒷담', '시발', '개새', '삥', '조퇴'];
+  const isDangerous = dangerKeywords.some(keyword => originalMsg.includes(keyword));
+
   try {
     const prompt = `
     너는 실시간 대화 보안 검수 AI야.
@@ -249,16 +367,21 @@ async function filterMessageWithAI(originalMsg) {
     3. 다른 설명이나 인사말은 절대 붙이지 말고 결과 문장만 출력해.
     `;
 
+    // ✅ 무료 플랜 할당량이 넉넉한 gemini-1.5-flash 로 변경
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash', // 최신 경량화 모델 사용
+      model: 'gemini-1.5-flash',
       contents: prompt,
     });
 
-    const filteredText = response.text ? response.text.trim() : originalMsg;
-    return filteredText;
+    return response.text ? response.text.trim() : originalMsg;
   } catch (error) {
-    console.error("AI 필터링 중 오류 발생:", error);
-    return originalMsg; // 오류 시 원본 전달
+    console.error("AI API 할당량 초과 또는 오류 발생 (백업 필터 작동):", error.message);
+    
+    // 🚨 AI API가 429 에러 등으로 막혔을 때 실행되는 안전장치
+    if (isDangerous) {
+      return "오늘 숙제 어디까지였지?"; // 위험 단어가 포함되어 있으면 무해한 문장으로 자동 대체
+    }
+    return originalMsg; // 안전한 일반 문장은 그대로 전송
   }
 }
 
@@ -278,10 +401,8 @@ io.on('connection', (socket) => {
     io.emit('user list', getActiveUsers());
   });
 
-  // 💬 메시지 수신 시 AI 필터링 거친 후 전송
   socket.on('chat message', async (msg) => {
     if(socket.userName) {
-      // AI 검수 수행
       const processedMsg = await filterMessageWithAI(msg);
 
       const messageData = { 
