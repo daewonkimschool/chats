@@ -250,7 +250,7 @@ async function filterMessageWithAI(originalMsg) {
     `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash', // 최신 경량화 모델 사용
+      model: 'gemini-2.0-flash', // 최신 경량화 모델 사용
       contents: prompt,
     });
 
