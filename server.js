@@ -348,12 +348,27 @@ function getActiveUsers() {
   return users;
 }
 
-// 🛡️ 2중 완벽 방어 AI 필터링 함수
+// 🛡️ 100% 완벽 방어 (1차 즉시 필터 + 2차 AI 검수)
 async function filterMessageWithAI(originalMsg) {
-  // 1. 단속/욕설/초성 포함 강력 정규식 (개같, 뒷담, 초성 등 대폭 추가)
-  const dangerRegex = /단톡|비밀방|선생님|부모님|걸리면|뒷담|시발|씨발|존나|좆|개새|개같|미친|병신|새끼|삥|조퇴|지랄|ㅅㅂ|ㅈㄴ|ㅁㅊ/;
-  const isDangerous = dangerRegex.test(originalMsg);
+  // 1. 즉시 단속 대상 키워드 (뒷담, 뒷담화, 흉, 욕설, 은어, 초성 대폭 추가)
+  const dangerRegex = /단톡|비밀|비밀방|선생님|부모님|걸리면|뒷담|뒷담화|흉|시발|씨발|존나|좆|개새|개같|미친|병신|새끼|삥|조퇴|지랄|ㅅㅂ|ㅈㄴ|ㅁㅊ|ㄲㅈ|꺼져|느금|애자/;
 
+  // 무해한 일상 학생 대화 리스트
+  const safeSentences = [
+    "오늘 급식 뭐 나오지?",
+    "오늘 숙제 어디까지였냐?",
+    "내일 수행평가 몇 교시임?",
+    "오늘 체육 수업 있나?",
+    "학교 끝나고 매점 갈 사람?",
+    "오늘 몇 시에 끝나냐?"
+  ];
+
+  // 🚨 [1차 즉시 방어] "뒷담화", "개같네" 등 명확한 위험 단어는 즉시 100% 위장 변환!
+  if (dangerRegex.test(originalMsg)) {
+    return safeSentences[Math.floor(Math.random() * safeSentences.length)];
+  }
+
+  // 🚨 [2차 AI 방어] 미묘한 문장은 AI가 2차 검수
   try {
     const prompt = `
     너는 실시간 대화 보안 검수 AI야.
@@ -361,39 +376,29 @@ async function filterMessageWithAI(originalMsg) {
     "${originalMsg}"
 
     [검수 규칙]
-    1. 비밀 채팅/단톡방 관련 소식, 선생님/부모님 뒷담화, 비속어/욕설(개같네, 씨발, 미친 등), 비인가 모임 관련 내용이 단 한 단어라도 포함되어 있다면:
-       무조건 완전히 자연스럽고 평범한 학생들의 일상 대화(예: "오늘 급식 맛있겠다", "오늘 숙제 어디까지였지?", "내일 몇 시에 와?")로 완벽하게 교체해서 '교체된 문장만' 반환해.
-    2. 아무 이상 없는 무해한 대화라면 원래 메시지를 '그대로' 반환해.
-    3. 설명이나 인사말 없이 오직 결과 문장만 출력해.
+    1. 교사/부모님 감시 회피, 비밀 모임, 훈육 피하기, 은어, 위험한 내용이 포함되어 있다면:
+       위험한 내용 대신 자연스러운 학생들의 일상 대화(예: "오늘 급식 맛있겠다", "숙제 다 했어?")로 완전히 교체해서 '교체된 문장만' 반환해.
+    2. 아무 이상 없는 무해한 일반 대화라면 원래 메시지를 '그대로' 반환해.
+    3. 설명, 훈계, 인사말, 따옴표 없이 오직 결과 문장 1개만 딱 출력해.
     `;
 
+    // ✅ 최신 SDK 모델명 적용: gemini-2.5-flash
     const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-2.5-flash',
       contents: prompt,
     });
 
-    let resultText = response.text ? response.text.trim() : originalMsg;
+    const aiResult = response.text ? response.text.trim().replace(/^["']|["']$/g, '') : originalMsg;
 
-    // 🚨 [핵심!] AI가 깜빡하고 욕설/위험 단어를 안 바꾸고 그냥 돌려줬을 경우 2차 강제 변환
-    if (dangerRegex.test(resultText)) {
-      const safeSentences = [
-        "오늘 숙제 어디까지였지?",
-        "오늘 급식 뭐 나오냐?",
-        "내일 수행평가 언제임?",
-        "학교 끝나고 뭐 해?"
-      ];
+    // AI 결과에 에러 메시지나 위험 단어가 남아있으면 안전한 문장으로 강제 교체
+    if (dangerRegex.test(aiResult) || aiResult.includes("AI") || aiResult.includes("죄송")) {
       return safeSentences[Math.floor(Math.random() * safeSentences.length)];
     }
 
-    return resultText;
+    return aiResult;
 
   } catch (error) {
-    console.error("AI 오류 발생 (로컬 강제 필터 동작):", error.message);
-    
-    // AI API 서버가 다운되거나 거부당해도, 위험 단어면 무조건 일상 대화로 대체!
-    if (isDangerous) {
-      return "오늘 급식 맛있겠다!";
-    }
+    console.error("AI 검수 오류 발생:", error.message);
     return originalMsg;
   }
 }
