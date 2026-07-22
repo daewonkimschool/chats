@@ -348,10 +348,10 @@ function getActiveUsers() {
   return users;
 }
 
-// 🛡️ 100% 완벽 방어 (1차 즉시 필터 + 2차 AI 검수)
+// 🛡️ 완벽 방어 필터링 (우회 욕설 + 인신공격/외모비하 + 2중 AI 방어)
 async function filterMessageWithAI(originalMsg) {
-  // 1. 즉시 단속 대상 키워드 (뒷담, 뒷담화, 흉, 욕설, 은어, 초성 대폭 추가)
-  const dangerRegex = /단톡|비밀|비밀방|선생님|부모님|걸리면|뒷담|뒷담화|흉|시발|씨발|존나|좆|개새|개같|미친|병신|새끼|삥|조퇴|지랄|ㅅㅂ|ㅈㄴ|ㅁㅊ|ㄲㅈ|꺼져|느금|애자/;
+  // 1. 단속/욕설/우회표현/인신공격/외모비하 정규식 (대폭 보강)
+  const dangerRegex = /단톡|비밀|비밀방|선생님|부모님|걸리면|뒷담|뒷담화|흉|시발|씨발|시팔|씨팔|존나|좆|좇|좃|졷|좋까|좇가|좆까|조까|좃까|개새|개같|미친|병신|새끼|삥|조퇴|지랄|ㅅㅂ|ㅈㄴ|ㅁㅊ|ㄲㅈ|꺼져|느금|애자|못생|닥쳐|돼지|바보|멍청|꺼져/;
 
   // 무해한 일상 학생 대화 리스트
   const safeSentences = [
@@ -363,26 +363,25 @@ async function filterMessageWithAI(originalMsg) {
     "오늘 몇 시에 끝나냐?"
   ];
 
-  // 🚨 [1차 즉시 방어] "뒷담화", "개같네" 등 명확한 위험 단어는 즉시 100% 위장 변환!
+  // 🚨 [1차 즉시 방어] 변형 욕설("좋까", "좇가"), 외모 비하("못생김") 등 키워드 감지 시 즉시 교체
   if (dangerRegex.test(originalMsg)) {
     return safeSentences[Math.floor(Math.random() * safeSentences.length)];
   }
 
-  // 🚨 [2차 AI 방어] 미묘한 문장은 AI가 2차 검수
+  // 🚨 [2차 AI 방어] 정규식을 피해간 인신공격이나 비방 문장 검수
   try {
     const prompt = `
-    너는 실시간 대화 보안 검수 AI야.
+    너는 학교 대화 보안 검수 AI야.
     아래 사용자의 메시지를 검사해줘:
     "${originalMsg}"
 
     [검수 규칙]
-    1. 교사/부모님 감시 회피, 비밀 모임, 훈육 피하기, 은어, 위험한 내용이 포함되어 있다면:
-       위험한 내용 대신 자연스러운 학생들의 일상 대화(예: "오늘 급식 맛있겠다", "숙제 다 했어?")로 완전히 교체해서 '교체된 문장만' 반환해.
+    1. 특정 인물 비방/뒷담화, 외모 비하(예: 못생김, 돼지 등), 변형된 욕설/비속어(좋까, 좇가, 시팔 등), 선생님/부모님 뒷담화, 비밀 모임 관련 내용이 포함되어 있다면:
+       무조건 완전히 무해하고 평범한 학생들의 일상 대화(예: "오늘 급식 맛있겠다", "숙제 다 했어?")로 완벽히 바꿔서 '교체된 문장만' 반환해.
     2. 아무 이상 없는 무해한 일반 대화라면 원래 메시지를 '그대로' 반환해.
     3. 설명, 훈계, 인사말, 따옴표 없이 오직 결과 문장 1개만 딱 출력해.
     `;
 
-    // ✅ 최신 SDK 모델명 적용: gemini-2.5-flash
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: prompt,
@@ -390,7 +389,7 @@ async function filterMessageWithAI(originalMsg) {
 
     const aiResult = response.text ? response.text.trim().replace(/^["']|["']$/g, '') : originalMsg;
 
-    // AI 결과에 에러 메시지나 위험 단어가 남아있으면 안전한 문장으로 강제 교체
+    // AI가 정규식을 통과하지 못했거나 위험 단어를 포함해 반환한 경우 3차 안전망 적용
     if (dangerRegex.test(aiResult) || aiResult.includes("AI") || aiResult.includes("죄송")) {
       return safeSentences[Math.floor(Math.random() * safeSentences.length)];
     }
