@@ -348,10 +348,10 @@ function getActiveUsers() {
   return users;
 }
 
-// 🛡️ AI 및 백업 필터링 함수 (보강 버전)
+// 🛡️ 2중 완벽 방어 AI 필터링 함수
 async function filterMessageWithAI(originalMsg) {
-  // 1. 한국어 주요 욕설 및 단속 키워드 정규식 감지 (미친, 좆, 씨발, 존나 등 포함)
-  const dangerRegex = /단톡|비밀방|선생님|부모님|걸리면|뒷담|시발|씨발|존나|좆|개새|미친|병신|새끼|삥|조퇴|지랄|존나/;
+  // 1. 단속/욕설/초성 포함 강력 정규식 (개같, 뒷담, 초성 등 대폭 추가)
+  const dangerRegex = /단톡|비밀방|선생님|부모님|걸리면|뒷담|시발|씨발|존나|좆|개새|개같|미친|병신|새끼|삥|조퇴|지랄|ㅅㅂ|ㅈㄴ|ㅁㅊ/;
   const isDangerous = dangerRegex.test(originalMsg);
 
   try {
@@ -361,10 +361,10 @@ async function filterMessageWithAI(originalMsg) {
     "${originalMsg}"
 
     [검수 규칙]
-    1. 비밀 채팅/단톡방 관련 소식, 선생님/부모님 뒷담화, 비속어/욕설, 비인가 모임 관련 내용이 포함되어 있다면:
-       위험한 내용 대신 완전히 자연스럽고 평범한 학생들의 일상 대화(예: "오늘 급식 맛있겠다", "숙제 다 했어?", "내일 몇 시에 와?")로 교체해서 '교체된 문장만' 반환해.
+    1. 비밀 채팅/단톡방 관련 소식, 선생님/부모님 뒷담화, 비속어/욕설(개같네, 씨발, 미친 등), 비인가 모임 관련 내용이 단 한 단어라도 포함되어 있다면:
+       무조건 완전히 자연스럽고 평범한 학생들의 일상 대화(예: "오늘 급식 맛있겠다", "오늘 숙제 어디까지였지?", "내일 몇 시에 와?")로 완벽하게 교체해서 '교체된 문장만' 반환해.
     2. 아무 이상 없는 무해한 대화라면 원래 메시지를 '그대로' 반환해.
-    3. 다른 설명이나 인사말은 절대 붙이지 말고 결과 문장만 출력해.
+    3. 설명이나 인사말 없이 오직 결과 문장만 출력해.
     `;
 
     const response = await ai.models.generateContent({
@@ -372,36 +372,31 @@ async function filterMessageWithAI(originalMsg) {
       contents: prompt,
     });
 
-    const text = response.text ? response.text.trim() : null;
+    let resultText = response.text ? response.text.trim() : originalMsg;
 
-    // AI 응답이 정상적으로 나왔으면 그 텍스트 사용
-    if (text) {
-      return text;
-    } 
-    // AI가 욕설 감지로 빈 응답을 돌려줬을 때
-    else if (isDangerous) {
-      return "오늘 급식 뭐 나오지?";
-    }
-    return originalMsg;
-
-  } catch (error) {
-    console.error("AI 필터링 오류/차단 발생 (백업 필터 동작):", error.message);
-    
-    // 🚨 AI API가 차단되거나 할당량 초과 시, 위험 단어면 무조건 변환!
-    if (isDangerous) {
+    // 🚨 [핵심!] AI가 깜빡하고 욕설/위험 단어를 안 바꾸고 그냥 돌려줬을 경우 2차 강제 변환
+    if (dangerRegex.test(resultText)) {
       const safeSentences = [
         "오늘 숙제 어디까지였지?",
-        "내일 수행평가 언제냐?",
-        "오늘 급식 맛있겠다",
+        "오늘 급식 뭐 나오냐?",
+        "내일 수행평가 언제임?",
         "학교 끝나고 뭐 해?"
       ];
-      // 랜덤하게 일상 대화 중 하나로 교체
       return safeSentences[Math.floor(Math.random() * safeSentences.length)];
+    }
+
+    return resultText;
+
+  } catch (error) {
+    console.error("AI 오류 발생 (로컬 강제 필터 동작):", error.message);
+    
+    // AI API 서버가 다운되거나 거부당해도, 위험 단어면 무조건 일상 대화로 대체!
+    if (isDangerous) {
+      return "오늘 급식 맛있겠다!";
     }
     return originalMsg;
   }
 }
-
 io.on('connection', (socket) => {
   console.log('소켓 연결됨');
 
